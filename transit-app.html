@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>乗換案内</title>
+<style>
+  /* ── Design tokens ─────────────────────────────────── */
+  :root {
+    --bg:        #0f1117;
+    --surface:   #1a1d27;
+    --card:      #22263a;
+    --border:    #2e3350;
+    --accent:    #4f8ef7;
+    --accent2:   #e8645a;
+    --walk:      #68d391;
+    --text:      #e8eaf6;
+    --muted:     #7880a0;
+    --rail:      #4f8ef7;
+    --subway:    #e8645a;
+    --bus:       #f6c94f;
+    --ferry:     #5ddde5;
+    --tram:      #c47ef6;
+    --mono:      'JetBrains Mono', 'Courier New', monospace;
+    --sans:      'Hiragino Kaku Gothic ProN', 'Noto Sans JP', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ── Header ──────────────────────────────────────── */
+  header {
+    width: 100%;
+    padding: 18px 24px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-mark {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: var(--accent);
+    display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .logo-mark svg { width: 18px; height: 18px; }
+  header h1 { font-size: 1rem; font-weight: 700; letter-spacing: .04em; }
+  header span { font-size: .72rem; color: var(--muted); margin-left: 4px; }
+
+  /* ── Main layout ─────────────────────────────────── */
+  main {
+    width: 100%;
+    max-width: 680px;
+    padding: 28px 20px 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ── Search card ─────────────────────────────────── */
+  .search-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .input-row {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .input-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .input-label {
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    padding-left: 4px;
+  }
+
+  .swap-btn {
+    align-self: flex-end;
+    margin-bottom: 2px;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted);
+    cursor: pointer;
+    display: grid; place-items: center;
+    transition: background .15s, color .15s;
+    flex-shrink: 0;
+  }
+  .swap-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .place-input-wrap { position: relative; }
+  .place-input {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: .88rem;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .place-input::placeholder { color: var(--muted); }
+  .place-input:focus { border-color: var(--accent); }
+
+  .suggest-list {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    z-index: 100;
+    max-height: 220px;
+    overflow-y: auto;
+    display: none;
+    box-shadow: 0 8px 32px rgba(0,0,0,.45);
+  }
+  .suggest-list.open { display: block; }
+  .suggest-item {
+    padding: 9px 14px;
+    cursor: pointer;
+    font-size: .85rem;
+    border-bottom: 1px solid var(--border);
+    transition: background .1s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .suggest-item:last-child { border-bottom: none; }
+  .suggest-item:hover, .suggest-item.active { background: var(--border); }
+  .suggest-kind {
+    font-size: .65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--border);
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+
+  /* ── Time / mode row ─────────────────────────────── */
+  .options-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .seg-ctrl {
+    display: flex;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .seg-btn {
+    padding: 6px 12px;
+    font-size: .75rem;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: var(--sans);
+    transition: background .15s, color .15s;
+  }
+  .seg-btn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .time-input {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: .8rem;
+    padding: 6px 10px;
+    outline: none;
+    width: 130px;
+    transition: border-color .15s;
+  }
+  .time-input:focus { border-color: var(--accent); }
+
+  .search-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-family: var(--sans);
+    font-size: .9rem;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: .04em;
+    transition: opacity .15s, transform .1s;
+  }
+  .search-btn:hover { opacity: .9; }
+  .search-btn:active { transform: scale(.98); }
+  .search-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ── Results ─────────────────────────────────────── */
+  .results-section { display: flex; flex-direction: column; gap: 14px; }
+  .results-title {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--muted);
+  }
+
+  .journey-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: border-color .15s;
+    cursor: pointer;
+  }
+  .journey-card:hover { border-color: var(--accent); }
+
+  .journey-header {
+    padding: 14px 18px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 1px solid var(--border);
+  }
+  .journey-times {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .time-big {
+    font-family: var(--mono);
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: -.01em;
+  }
+  .time-arrow { color: var(--muted); font-size: .9rem; }
+  .journey-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+  }
+  .duration-pill {
+    font-family: var(--mono);
+    font-size: .78rem;
+    padding: 3px 8px;
+    border-radius: 20px;
+    background: var(--card);
+    color: var(--text);
+  }
+  .transfer-label { font-size: .72rem; color: var(--muted); }
+  .fare-label {
+    font-size: .72rem;
+    color: var(--muted);
+  }
+
+  /* ── Route diagram ───────────────────────────────── */
+  .route-diagram {
+    padding: 14px 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+
+  .leg-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    position: relative;
+  }
+
+  .leg-line-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 18px;
+    flex-shrink: 0;
+    padding-top: 6px;
+  }
+  .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: var(--bg);
+    z-index: 1;
+    flex-shrink: 0;
+  }
+  .dot.end { border-color: var(--accent2); }
+  .dot.walk { border-color: var(--walk); }
+
+  .vert-line {
+    width: 2px;
+    flex: 1;
+    min-height: 20px;
+    margin: 2px 0;
+  }
+
+  .leg-content {
+    flex: 1;
+    padding-bottom: 16px;
+  }
+  .leg-station {
+    font-size: .86rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+    line-height: 1.2;
+  }
+  .leg-station small {
+    font-size: .72rem;
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 6px;
+  }
+  .leg-route-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px 3px 7px;
+    border-radius: 6px;
+    font-size: .74rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+    letter-spacing: .02em;
+  }
+  .leg-route-badge .mode-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .leg-sub {
+    font-size: .73rem;
+    color: var(--muted);
+  }
+  .walk-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: .76rem;
+    color: var(--walk);
+    padding: 3px 0;
+  }
+
+  /* ── Loading / error ─────────────────────────────── */
+  .status-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 24px;
+    text-align: center;
+    color: var(--muted);
+    font-size: .88rem;
+    display: none;
+  }
+  .status-block.visible { display: block; }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    margin: 0 auto 14px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-block {
+    background: #2a1a1a;
+    border: 1px solid #5a2a2a;
+    border-radius: 14px;
+    padding: 16px 20px;
+    color: #f87171;
+    font-size: .84rem;
+    display: none;
+  }
+  .error-block.visible { display: block; }
+
+  /* ── Scrollbar ───────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 440px) {
+    .options-row { flex-direction: column; align-items: flex-start; }
+    .time-input { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">
+    <svg viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="4" cy="9" r="2.5" stroke="white" stroke-width="1.5"/>
+      <circle cx="14" cy="9" r="2.5" stroke="white" stroke-width="1.5"/>
+      <line x1="6.5" y1="9" x2="11.5" y2="9" stroke="white" stroke-width="1.5"/>
+    </svg>
+  </div>
+  <h1>乗換案内 <span>transit.ls8h.com</span></h1>
+</header>
+
+<main>
+  <!-- Search card -->
+  <div class="search-card">
+    <div class="input-row">
+      <div class="input-col">
+        <span class="input-label">出発</span>
+        <div class="place-input-wrap">
+          <input class="place-input" id="from-input" type="text" placeholder="駅・地名を入力" autocomplete="off">
+          <ul class="suggest-list" id="from-list"></ul>
+        </div>
+      </div>
+
+      <button class="swap-btn" id="swap-btn" title="出発と到着を入れ替え">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M2 5h10M9 2l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 9H2M5 6l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <div class="input-col">
+        <span class="input-label">到着</span>
+        <div class="place-input-wrap">
+          <input class="place-input" id="to-input" type="text" placeholder="駅・地名を入力" autocomplete="off">
+          <ul class="suggest-list" id="to-list"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="options-row">
+      <div class="seg-ctrl" id="type-ctrl">
+        <button class="seg-btn active" data-val="departure">出発</button>
+        <button class="seg-btn" data-val="arrival">到着</button>
+        <button class="seg-btn" data-val="first">始発</button>
+        <button class="seg-btn" data-val="last">終電</button>
+      </div>
+      <input class="time-input" id="time-input" type="datetime-local">
+    </div>
+
+    <button class="search-btn" id="search-btn">経路を検索</button>
+  </div>
+
+  <!-- Loading -->
+  <div class="status-block" id="loading-block">
+    <div class="spinner"></div>
+    経路を検索中…
+  </div>
+
+  <!-- Error -->
+  <div class="error-block" id="error-block"></div>
+
+  <!-- Results -->
+  <div class="results-section" id="results-section"></div>
+</main>
+
+<script>
+const API = 'https://api.transit.ls8h.com';
+
+// ── State ──────────────────────────────────────────
+const state = {
+  from: null, // { endpoint, name }
+  to:   null,
+  type: 'departure',
+};
+
+// ── Utilities ──────────────────────────────────────
+function fmtSecs(secs) {
+  // convert service-day seconds to HH:MM
+  const s = ((secs % 86400) + 86400) % 86400;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+function fmtDuration(secs) {
+  const m = Math.round(secs / 60);
+  return m >= 60 ? `${Math.floor(m/60)}時間${m%60}分` : `${m}分`;
+}
+function modeColor(mode) {
+  const map = { rail:'#4f8ef7', subway:'#e8645a', bus:'#f6c94f',
+    ferry:'#5ddde5', tram:'#c47ef6', monorail:'#f6a84f' };
+  return map[mode] || '#7880a0';
+}
+function modeLabel(mode) {
+  const map = { rail:'電車', subway:'地下鉄', bus:'バス',
+    ferry:'フェリー', tram:'路面電車', monorail:'モノレール', walk:'徒歩' };
+  return map[mode] || mode;
+}
+
+// ── Autocomplete ───────────────────────────────────
+let debounceTimer = null;
+
+function setupAutocomplete(inputId, listId, stateKey) {
+  const input  = document.getElementById(inputId);
+  const list   = document.getElementById(listId);
+  let activeIdx = -1;
+
+  async function suggest(q) {
+    if (!q) { list.innerHTML = ''; list.classList.remove('open'); return; }
+    try {
+      const res  = await fetch(`${API}/api/v1/places/suggest?q=${encodeURIComponent(q)}&limit=8`);
+      const data = await res.json();
+      renderList(data.places || []);
+    } catch(_) { list.classList.remove('open'); }
+  }
+
+  function renderList(places) {
+    list.innerHTML = '';
+    activeIdx = -1;
+    if (!places.length) { list.classList.remove('open'); return; }
+    places.forEach((p, i) => {
+      const li = document.createElement('li');
+      li.className = 'suggest-item';
+      li.dataset.idx = i;
+      const kindMap = { station:'駅', stop:'停留所', place:'施設', address:'住所' };
+      li.innerHTML = `<span class="suggest-kind">${kindMap[p.kind]||p.kind}</span>${p.name}`;
+      li.addEventListener('mousedown', e => {
+        e.preventDefault();
+        select(p);
+      });
+      list.appendChild(li);
+    });
+    list.classList.add('open');
+    list._places = places;
+  }
+
+  function select(p) {
+    input.value = p.name;
+    state[stateKey] = { endpoint: p.endpoint, name: p.name };
+    list.classList.remove('open');
+  }
+
+  input.addEventListener('input', () => {
+    state[stateKey] = null;
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => suggest(input.value.trim()), 200);
+  });
+
+  input.addEventListener('keydown', e => {
+    const items = list.querySelectorAll('.suggest-item');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+      items.forEach((it, i) => it.classList.toggle('active', i === activeIdx));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, -1);
+      items.forEach((it, i) => it.classList.toggle('active', i === activeIdx));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIdx >= 0 && list._places) {
+        select(list._places[activeIdx]);
+      }
+    } else if (e.key === 'Escape') {
+      list.classList.remove('open');
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!input.contains(e.target) && !list.contains(e.target)) {
+      list.classList.remove('open');
+    }
+  });
+}
+
+setupAutocomplete('from-input', 'from-list', 'from');
+setupAutocomplete('to-input',   'to-list',   'to');
+
+// ── Swap ───────────────────────────────────────────
+document.getElementById('swap-btn').addEventListener('click', () => {
+  const fi = document.getElementById('from-input');
+  const ti = document.getElementById('to-input');
+  [fi.value, ti.value] = [ti.value, fi.value];
+  [state.from, state.to] = [state.to, state.from];
+});
+
+// ── Type selector ──────────────────────────────────
+document.getElementById('type-ctrl').addEventListener('click', e => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  document.querySelectorAll('#type-ctrl .seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.type = btn.dataset.val;
+  const timeInput = document.getElementById('time-input');
+  timeInput.disabled = ['first','last'].includes(state.type);
+  timeInput.style.opacity = ['first','last'].includes(state.type) ? '.35' : '1';
+});
+
+// Set default datetime to now
+(function() {
+  const d = new Date();
+  d.setSeconds(0,0);
+  document.getElementById('time-input').value = d.toISOString().slice(0,16);
+})();
+
+// ── Search ─────────────────────────────────────────
+document.getElementById('search-btn').addEventListener('click', doSearch);
+
+// テキスト入力を places/suggest で解決して endpoint を返す
+async function resolvePlace(stateKey, inputId) {
+  if (state[stateKey]) return true; // 候補選択済み
+  const val = document.getElementById(inputId).value.trim();
+  if (!val) { document.getElementById(inputId).focus(); return false; }
+  const res  = await fetch(`${API}/api/v1/places/suggest?q=${encodeURIComponent(val)}&limit=1`);
+  const data = await res.json();
+  const p = data.places?.[0];
+  if (!p) throw new Error(`「${val}」が見つかりませんでした。駅名を確認してください。`);
+  state[stateKey] = { endpoint: p.endpoint, name: p.name };
+  document.getElementById(inputId).value = p.name; // 正式名称に更新
+  return true;
+}
+
+async function doSearch() {
+  const loading  = document.getElementById('loading-block');
+  const errBlock = document.getElementById('error-block');
+  const results  = document.getElementById('results-section');
+
+  loading.classList.add('visible');
+  errBlock.classList.remove('visible');
+  results.innerHTML = '';
+
+  try {
+    // 未選択の場合は suggest で解決
+    const fromOk = await resolvePlace('from', 'from-input');
+    if (!fromOk) { loading.classList.remove('visible'); return; }
+    const toOk = await resolvePlace('to', 'to-input');
+    if (!toOk)   { loading.classList.remove('visible'); return; }
+
+    const timeVal = document.getElementById('time-input').value;
+    let dateParam = '', timeParam = '';
+    if (timeVal && !['first','last'].includes(state.type)) {
+      const dt = new Date(timeVal);
+      dateParam = `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}`;
+      timeParam = `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+    }
+
+    const params = new URLSearchParams({
+      from: state.from.endpoint,
+      to:   state.to.endpoint,
+      type: state.type,
+      numItineraries: 3,
+    });
+    if (dateParam) params.set('date', dateParam);
+    if (timeParam) params.set('time', timeParam);
+
+    const res  = await fetch(`${API}/api/v1/plan?${params}`);
+    const data = await res.json();
+    loading.classList.remove('visible');
+
+    if (!res.ok) {
+      const msg = typeof data?.error === 'string' ? data.error
+        : data?.error?.message || 'APIエラーが発生しました。';
+      errBlock.textContent = msg;
+      errBlock.classList.add('visible');
+      return;
+    }
+
+    if (!data.journeys?.length) {
+      errBlock.textContent = '該当する経路が見つかりませんでした。';
+      errBlock.classList.add('visible');
+      return;
+    }
+
+    renderResults(data);
+
+  } catch(err) {
+    loading.classList.remove('visible');
+    // CORSエラーかどうか判定
+    const isCors = err instanceof TypeError && err.message.toLowerCase().includes('fetch');
+    if (isCors || err instanceof TypeError) {
+      errBlock.innerHTML = `
+        <strong>接続エラー：</strong> APIへのアクセスがブロックされています。<br><br>
+        このHTMLファイルを <code>file://</code> で直接開いている場合、ブラウザのCORS制限により動作しません。<br>
+        以下のいずれかの方法で開いてください：<br><br>
+        ① VSCode の <strong>Live Server</strong> 拡張機能で開く<br>
+        ② ターミナルで <code>python -m http.server 8080</code> を実行し、<a href="http://localhost:8080" style="color:var(--accent)">http://localhost:8080</a> にアクセス<br>
+        ③ ファイルを <strong>Chrome拡張機能</strong> や <strong>GitHub Pages</strong> にデプロイして使う
+      `;
+    } else {
+      errBlock.textContent = err.message || 'エラーが発生しました。';
+    }
+    errBlock.classList.add('visible');
+  }
+}
+
+// ── Render results ─────────────────────────────────
+function renderResults(data) {
+  const sec = document.getElementById('results-section');
+  const label = document.createElement('p');
+  label.className = 'results-title';
+  label.textContent = `${data.from.name} → ${data.to.name}　${data.journeys.length}件`;
+  sec.appendChild(label);
+
+  data.journeys.forEach(j => {
+    const card = document.createElement('div');
+    card.className = 'journey-card';
+
+    // Header
+    const hd = document.createElement('div');
+    hd.className = 'journey-header';
+
+    const times = document.createElement('div');
+    times.className = 'journey-times';
+    times.innerHTML = `
+      <span class="time-big">${fmtSecs(j.departureSecs)}</span>
+      <span class="time-arrow">→</span>
+      <span class="time-big">${fmtSecs(j.arrivalSecs)}</span>
+    `;
+
+    const meta = document.createElement('div');
+    meta.className = 'journey-meta';
+    const xfers = j.transferCount === 0 ? '乗換なし' : `乗換${j.transferCount}回`;
+    meta.innerHTML = `
+      <span class="duration-pill">${fmtDuration(j.durationSecs)}</span>
+      <span class="transfer-label">${xfers}</span>
+      ${j.fare ? `<span class="fare-label">¥${j.fare.ic ?? j.fare.ticket}</span>` : ''}
+    `;
+
+    hd.appendChild(times);
+    hd.appendChild(meta);
+    card.appendChild(hd);
+
+    // Route diagram
+    const diagram = document.createElement('div');
+    diagram.className = 'route-diagram';
+    renderDiagram(diagram, j, data);
+    card.appendChild(diagram);
+
+    sec.appendChild(card);
+  });
+}
+
+function renderDiagram(container, journey, data) {
+  const legs = journey.legs;
+
+  legs.forEach((leg, i) => {
+    const isLast = i === legs.length - 1;
+
+    if (leg.kind === 'walk') {
+      // Walk leg — show as a connector
+      const item = document.createElement('div');
+      item.className = 'leg-item';
+
+      const lineCol = document.createElement('div');
+      lineCol.className = 'leg-line-col';
+      const dot = document.createElement('div');
+      dot.className = 'dot walk';
+      lineCol.appendChild(dot);
+      if (!isLast) {
+        const line = document.createElement('div');
+        line.className = 'vert-line';
+        line.style.background = 'var(--walk)';
+        lineCol.appendChild(line);
+      }
+
+      const content = document.createElement('div');
+      content.className = 'leg-content';
+      const walkSecs = leg.arrivalSecs - leg.departureSecs;
+      content.innerHTML = `
+        <div class="leg-station">${leg.from.name}</div>
+        <div class="walk-badge">🚶 徒歩 ${Math.round(walkSecs/60)}分</div>
+      `;
+
+      item.appendChild(lineCol);
+      item.appendChild(content);
+      container.appendChild(item);
+
+    } else {
+      // Transit leg
+      const color = leg.color ? `#${leg.color.replace('#','')}` : modeColor(leg.mode);
+
+      const item = document.createElement('div');
+      item.className = 'leg-item';
+
+      const lineCol = document.createElement('div');
+      lineCol.className = 'leg-line-col';
+      const dot = document.createElement('div');
+      dot.className = isLast ? 'dot end' : 'dot';
+      dot.style.borderColor = color;
+      lineCol.appendChild(dot);
+      if (!isLast) {
+        const line = document.createElement('div');
+        line.className = 'vert-line';
+        line.style.background = color;
+        lineCol.appendChild(line);
+      }
+
+      const content = document.createElement('div');
+      content.className = 'leg-content';
+
+      const badge = document.createElement('div');
+      badge.className = 'leg-route-badge';
+      badge.style.background = color + '22';
+      badge.style.color = color;
+      badge.innerHTML = `
+        <span class="mode-dot" style="background:${color}"></span>
+        ${leg.routeName}
+      `;
+
+      content.innerHTML = `
+        <div class="leg-station">${leg.from.name}<small>${fmtSecs(leg.departureSecs)} 発</small></div>
+      `;
+      content.appendChild(badge);
+      const sub = document.createElement('div');
+      sub.className = 'leg-sub';
+      sub.textContent = `${leg.headsign ?? ''} ・ ${modeLabel(leg.mode)}`;
+      content.appendChild(sub);
+
+      // Last stop of this leg
+      if (isLast) {
+        const lastStation = document.createElement('div');
+        lastStation.className = 'leg-station';
+        lastStation.style.marginTop = '10px';
+        lastStation.innerHTML = `${leg.to.name}<small>${fmtSecs(leg.arrivalSecs)} 着</small>`;
+        content.appendChild(lastStation);
+      }
+
+      item.appendChild(lineCol);
+      item.appendChild(content);
+      container.appendChild(item);
+    }
+  });
+
+  // Final destination if last leg is transit
+  const lastLeg = legs[legs.length - 1];
+  if (lastLeg && lastLeg.kind === 'walk') {
+    const item = document.createElement('div');
+    item.className = 'leg-item';
+    const lineCol = document.createElement('div');
+    lineCol.className = 'leg-line-col';
+    const dot = document.createElement('div');
+    dot.className = 'dot end';
+    lineCol.appendChild(dot);
+    const content = document.createElement('div');
+    content.className = 'leg-content';
+    content.innerHTML = `<div class="leg-station">${lastLeg.to.name}<small>${fmtSecs(lastLeg.arrivalSecs)} 着</small></div>`;
+    item.appendChild(lineCol);
+    item.appendChild(content);
+    container.appendChild(item);
+  }
+}
+</script>
+</body>
+</html>
